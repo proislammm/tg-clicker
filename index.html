@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Telegram Clicker</title>
+
+<!-- Telegram Mini App -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<style>
+/* ==================================================
+   ROOT + THEME
+================================================== */
+body {
+  --bg:#0f0f0f;
+  --panel:#1c1c1c;
+  --text:#ffffff;
+  --accent:#ffb300;
+  --danger:#cc3333;
+
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:Arial, sans-serif;
+}
+
+body.light {
+  --bg:#f2f2f2;
+  --panel:#ffffff;
+  --text:#000000;
+  --accent:#ff9800;
+}
+
+/* ==================================================
+   LAYOUT
+================================================== */
+header {
+  padding:10px;
+  text-align:center;
+  background:var(--panel);
+  font-size:20px;
+  border-bottom:2px solid #333;
+}
+
+#container {
+  display:flex;
+  height:calc(100vh - 50px);
+}
+
+#left {
+  flex:1;
+  text-align:center;
+  padding:20px;
+}
+
+#right {
+  width:320px;
+  background:var(--panel);
+  padding:10px;
+  overflow-y:auto;
+}
+
+/* ==================================================
+   CLICKER
+================================================== */
+#clicker {
+  width:220px;
+  height:220px;
+  border-radius:50%;
+  margin:auto;
+  background:radial-gradient(circle,#ffd54f,#ff9800);
+  line-height:220px;
+  font-size:32px;
+  cursor:pointer;
+  transition:transform .1s;
+}
+
+#clicker:active {
+  transform:scale(0.9);
+}
+
+.stat {
+  margin-top:10px;
+  font-size:18px;
+}
+
+/* ==================================================
+   SHOP / PRESTIGE
+================================================== */
+.block {
+  background:#00000022;
+  border-radius:10px;
+  padding:10px;
+  margin-bottom:10px;
+}
+
+button {
+  width:100%;
+  padding:10px;
+  font-size:16px;
+  border:none;
+  border-radius:8px;
+  background:var(--accent);
+  cursor:pointer;
+}
+
+button.danger {
+  background:var(--danger);
+  color:#fff;
+}
+</style>
+</head>
+
+<body>
+
+<header>🍪 Telegram Clicker</header>
+
+<div id="container">
+
+<div id="left">
+  <div id="clicker">CLICK</div>
+  <div class="stat">🍪 <span id="score">0</span></div>
+  <div class="stat">⚡ <span id="perSec">0</span> / сек</div>
+  <div class="stat">💥 <span id="perClick">1</span> / клик</div>
+</div>
+
+<div id="right">
+
+<div class="block">
+<b>🔁 Престиж</b><br>
+Очки престижа: <span id="prestige">0</span>
+<button class="danger" onclick="doPrestige()">СДЕЛАТЬ ПРЕСТИЖ</button>
+</div>
+
+<div class="block">
+<b>🌳 Дерево престижа</b>
+<div id="prestigeTree"></div>
+</div>
+
+</div>
+</div>
+
+<script>
+/* ==================================================
+   TELEGRAM INIT
+================================================== */
+const tg = window.Telegram.WebApp;
+tg.expand();
+
+/* ==================================================
+   THEME ENGINE
+================================================== */
+function applyTheme(){
+  document.body.classList.toggle("light", tg.colorScheme === "light");
+}
+applyTheme();
+tg.onEvent("themeChanged", applyTheme);
+
+/* ==================================================
+   GAME STATE
+================================================== */
+const SAVE_VERSION = 1;
+
+let game = {
+  score:0,
+  perClick:1,
+  perSec:0,
+  prestige:0,
+  multClick:1,
+  multAuto:1
+};
+
+/* ==================================================
+   PRESTIGE TREE (20 APGRADES)
+================================================== */
+const PrestigeTree = {
+  nodes:{
+    p1:{title:"+50% клика",cost:1,unlocked:false,apply(){game.multClick+=0.5}},
+    p2:{title:"+1 автоклик",cost:1,unlocked:false,apply(){game.perSec+=1}},
+    p3:{title:"+100% клика",cost:2,unlocked:false,apply(){game.multClick+=1}},
+    p4:{title:"+2 автоклика",cost:2,unlocked:false,apply(){game.perSec+=2}},
+    p5:{title:"+50% авто",cost:3,unlocked:false,apply(){game.multAuto+=0.5}},
+
+    p6:{title:"+5 кликов",cost:3,unlocked:false,apply(){game.perClick+=5}},
+    p7:{title:"+3 авто",cost:4,unlocked:false,apply(){game.perSec+=3}},
+    p8:{title:"+200% клика",cost:5,unlocked:false,apply(){game.multClick+=2}},
+    p9:{title:"+100% авто",cost:5,unlocked:false,apply(){game.multAuto+=1}},
+    p10:{title:"+10 кликов",cost:6,unlocked:false,apply(){game.perClick+=10}},
+
+    p11:{title:"+5 авто",cost:7,unlocked:false,apply(){game.perSec+=5}},
+    p12:{title:"+300% клика",cost:8,unlocked:false,apply(){game.multClick+=3}},
+    p13:{title:"+200% авто",cost:8,unlocked:false,apply(){game.multAuto+=2}},
+    p14:{title:"+20 кликов",cost:10,unlocked:false,apply(){game.perClick+=20}},
+    p15:{title:"+10 авто",cost:10,unlocked:false,apply(){game.perSec+=10}},
+
+    p16:{title:"+500% клика",cost:12,unlocked:false,apply(){game.multClick+=5}},
+    p17:{title:"+300% авто",cost:12,unlocked:false,apply(){game.multAuto+=3}},
+    p18:{title:"+50 кликов",cost:15,unlocked:false,apply(){game.perClick+=50}},
+    p19:{title:"+25 авто",cost:15,unlocked:false,apply(){game.perSec+=25}},
+    p20:{title:"💀 БОГ КЛИКОВ",cost:20,unlocked:false,apply(){game.multClick+=10}}
+  }
+};
+
+/* ==================================================
+   SAVE / LOAD
+================================================== */
+function saveGame(){
+  localStorage.save = JSON.stringify({
+    v:SAVE_VERSION,
+    game,
+    prestige:PrestigeTree
+  });
+}
+
+function loadGame(){
+  if(!localStorage.save) return;
+  const data = JSON.parse(localStorage.save);
+  if(data.v !== SAVE_VERSION) return;
+  game = data.game;
+  Object.assign(PrestigeTree.nodes, data.prestige.nodes);
+}
+loadGame();
+
+/* ==================================================
+   CLICK
+================================================== */
+clicker.onclick = () => {
+  game.score += game.perClick * game.multClick;
+  update();
+};
+
+/* ==================================================
+   AUTO INCOME
+================================================== */
+setInterval(()=>{
+  game.score += game.perSec * game.multAuto;
+  update();
+},1000);
+
+/* ==================================================
+   PRESTIGE
+================================================== */
+function doPrestige(){
+  if(game.score < 1000) return;
+  game.prestige++;
+  game.score = 0;
+  game.perClick = 1;
+  game.perSec = 0;
+  game.multClick = 1;
+  game.multAuto = 1;
+  update();
+}
+
+/* ==================================================
+   PRESTIGE BUY
+================================================== */
+function buyPrestige(id){
+  const n = PrestigeTree.nodes[id];
+  if(n.unlocked) return;
+  if(game.prestige >= n.cost){
+    game.prestige -= n.cost;
+    n.unlocked = true;
+    n.apply();
+    update();
+  }
+}
+
+/* ==================================================
+   RENDER
+================================================== */
+function renderPrestigeTree(){
+  const el = document.getElementById("prestigeTree");
+  el.innerHTML = "";
+  for(const id in PrestigeTree.nodes){
+    const n = PrestigeTree.nodes[id];
+    const b = document.createElement("button");
+    b.textContent = n.unlocked ? "✔ "+n.title : `${n.title} (${n.cost})`;
+    b.disabled = n.unlocked;
+    b.onclick = ()=>buyPrestige(id);
+    el.appendChild(b);
+  }
+}
+
+/* ==================================================
+   UPDATE
+================================================== */
+function update(){
+  score.innerText = Math.floor(game.score);
+  perSec.innerText = Math.floor(game.perSec * game.multAuto);
+  perClick.innerText = Math.floor(game.perClick * game.multClick);
+  prestige.innerText = game.prestige;
+  renderPrestigeTree();
+  saveGame();
+}
+
+update();
+</script>
+<style>
+/* ==================================================
+   SHOP UI (COOKIE CLICKER STYLE)
+================================================== */
+.shop-item {
+  background:linear-gradient(180deg,#00000033,#00000055);
+  border-radius:12px;
+  padding:10px;
+  margin-bottom:10px;
+  transition:transform .1s, opacity .1s;
+}
+
+.shop-item:hover {
+  transform:scale(1.02);
+}
+
+.shop-item.disabled {
+  opacity:0.4;
+}
+
+.shop-title {
+  font-weight:bold;
+  font-size:16px;
+}
+
+.shop-desc {
+  font-size:13px;
+  opacity:0.8;
+}
+
+.shop-price {
+  margin-top:5px;
+  font-size:14px;
+}
+
+/* ==================================================
+   PROGRESS BAR
+================================================== */
+#prestigeBar {
+  width:100%;
+  height:14px;
+  background:#00000055;
+  border-radius:10px;
+  overflow:hidden;
+  margin-top:10px;
+}
+
+#prestigeFill {
+  height:100%;
+  width:0%;
+  background:linear-gradient(90deg,#ff9800,#ffc107);
+  transition:width .3s;
+}
+</style>
+
+<script>
+/* ==================================================
+   SHOP DATA (12 UPGRADES)
+================================================== */
+const Shop = {
+  items: [
+    {
+      id:"cursor",
+      title:"🖱 Курсор",
+      desc:"+1 / сек",
+      base:15,
+      growth:1.15,
+      owned:0,
+      apply(){ game.perSec += 1; }
+    },
+    {
+      id:"grandma",
+      title:"👵 Бабушка",
+      desc:"+5 / сек",
+      base:100,
+      growth:1.15,
+      owned:0,
+      apply(){ game.perSec += 5; }
+    },
+    {
+      id:"farm",
+      title:"🌾 Ферма",
+      desc:"+20 / сек",
+      base:500,
+      growth:1.17,
+      owned:0,
+      apply(){ game.perSec += 20; }
+    },
+    {
+      id:"factory",
+      title:"🏭 Фабрика",
+      desc:"+100 / сек",
+      base:3000,
+      growth:1.18,
+      owned:0,
+      apply(){ game.perSec += 100; }
+    },
+    {
+      id:"bank",
+      title:"🏦 Банк",
+      desc:"+500 / сек",
+      base:15000,
+      growth:1.2,
+      owned:0,
+      apply(){ game.perSec += 500; }
+    },
+    {
+      id:"temple",
+      title:"⛪ Храм",
+      desc:"+2000 / сек",
+      base:100000,
+      growth:1.22,
+      owned:0,
+      apply(){ game.perSec += 2000; }
+    },
+    {
+      id:"lab",
+      title:"🧪 Лаборатория",
+      desc:"+10000 / сек",
+      base:500000,
+      growth:1.25,
+      owned:0,
+      apply(){ game.perSec += 10000; }
+    },
+    {
+      id:"portal",
+      title:"🌀 Портал",
+      desc:"+50000 / сек",
+      base:2000000,
+      growth:1.3,
+      owned:0,
+      apply(){ game.perSec += 50000; }
+    },
+    {
+      id:"click1",
+      title:"💥 Усиленный клик",
+      desc:"+1 за клик",
+      base:50,
+      growth:1.4,
+      owned:0,
+      apply(){ game.perClick += 1; }
+    },
+    {
+      id:"click5",
+      title:"💥💥 Мощный клик",
+      desc:"+5 за клик",
+      base:300,
+      growth:1.45,
+      owned:0,
+      apply(){ game.perClick += 5; }
+    },
+    {
+      id:"multClick",
+      title:"⚡ Множитель клика",
+      desc:"+50% клика",
+      base:2000,
+      growth:1.5,
+      owned:0,
+      apply(){ game.multClick += 0.5; }
+    },
+    {
+      id:"multAuto",
+      title:"⚙️ Множитель авто",
+      desc:"+50% авто",
+      base:5000,
+      growth:1.5,
+      owned:0,
+      apply(){ game.multAuto += 0.5; }
+    }
+  ]
+};
+
+/* ==================================================
+   SHOP HELPERS
+================================================== */
+function shopPrice(item){
+  return Math.floor(item.base * Math.pow(item.growth, item.owned));
+}
+
+/* ==================================================
+   RENDER SHOP
+================================================== */
+function renderShop(){
+  let shopEl = document.getElementById("shop");
+  if(!shopEl){
+    shopEl = document.createElement("div");
+    shopEl.id = "shop";
+    shopEl.className = "block";
+    shopEl.innerHTML = "<b>🛒 Магазин</b>";
+    document.getElementById("right").appendChild(shopEl);
+  }
+
+  shopEl.innerHTML = "<b>🛒 Магазин</b>";
+
+  Shop.items.forEach(item=>{
+    const price = shopPrice(item);
+    const canBuy = game.score >= price;
+
+    const el = document.createElement("div");
+    el.className = "shop-item"+(canBuy?"":" disabled");
+
+    el.innerHTML = `
+      <div class="shop-title">${item.title} (${item.owned})</div>
+      <div class="shop-desc">${item.desc}</div>
+      <div class="shop-price">Цена: ${price}</div>
+    `;
+
+    el.onclick = ()=>{
+      if(game.score < price) return;
+      game.score -= price;
+      item.owned++;
+      item.apply();
+      update();
+    };
+
+    shopEl.appendChild(el);
+  });
+}
+
+/* ==================================================
+   OFFLINE INCOME
+================================================== */
+function applyOfflineIncome(){
+  const now = Date.now();
+  if(!game.lastSave){
+    game.lastSave = now;
+    return;
+  }
+  const diff = Math.floor((now - game.lastSave)/1000);
+  if(diff > 5){
+    const gain = diff * game.perSec * game.multAuto;
+    game.score += gain;
+  }
+  game.lastSave = now;
+}
+
+/* ==================================================
+   PRESTIGE PROGRESS BAR
+================================================== */
+function renderPrestigeProgress(){
+  let bar = document.getElementById("prestigeBar");
+  if(!bar){
+    bar = document.createElement("div");
+    bar.id = "prestigeBar";
+    bar.innerHTML = `<div id="prestigeFill"></div>`;
+    document.querySelector(".block").appendChild(bar);
+  }
+
+  const need = 1000;
+  const p = Math.min(game.score / need, 1);
+  document.getElementById("prestigeFill").style.width = (p*100)+"%";
+}
+
+/* ==================================================
+   EXTEND UPDATE
+================================================== */
+const oldUpdate = update;
+update = function(){
+  oldUpdate();
+  renderShop();
+  renderPrestigeProgress();
+};
+
+/* ==================================================
+   LOAD SHOP SAVE
+================================================== */
+if(localStorage.save){
+  const data = JSON.parse(localStorage.save);
+  if(data.shop){
+    Shop.items.forEach((it,i)=>{
+      it.owned = data.shop[i] || 0;
+    });
+  }
+}
+
+/* ==================================================
+   EXTEND SAVE
+================================================== */
+const oldSave = saveGame;
+saveGame = function(){
+  oldSave();
+  const data = JSON.parse(localStorage.save);
+  data.shop = Shop.items.map(i=>i.owned);
+  localStorage.save = JSON.stringify(data);
+};
+
+/* ==================================================
+   APPLY OFFLINE INCOME ON LOAD
+================================================== */
+applyOfflineIncome();
+update();
+</script>
+<style>
+/* ==================================================
+   PARTICLES
+================================================== */
+.particle {
+  position:fixed;
+  pointer-events:none;
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:gold;
+  animation:particleFly .7s ease-out forwards;
+  z-index:9999;
+}
+
+@keyframes particleFly {
+  from { transform:translate(0,0) scale(1); opacity:1; }
+  to   { transform:translate(var(--x),var(--y)) scale(0); opacity:0; }
+}
+
+/* ==================================================
+   PRESTIGE FLASH
+================================================== */
+#prestigeFlash {
+  position:fixed;
+  inset:0;
+  background:radial-gradient(circle,#fff,#ff9800,#000);
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .4s;
+  z-index:9998;
+}
+
+/* ==================================================
+   SETTINGS / STATS
+================================================== */
+.settings-item {
+  padding:8px;
+  margin-bottom:6px;
+  background:#00000033;
+  border-radius:8px;
+  cursor:pointer;
+  text-align:center;
+}
+</style>
+
+<div id="prestigeFlash"></div>
+
+<script>
+/* ==================================================
+   AUDIO ENGINE (WebAudio)
+================================================== */
+const AudioEngine = {
+  ctx:null,
+  enabled:true,
+  init(){
+    if(this.ctx) return;
+    this.ctx = new (window.AudioContext||window.webkitAudioContext)();
+  },
+  beep(freq=440,duration=0.05){
+    if(!this.enabled) return;
+    this.init();
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.frequency.value = freq;
+    o.connect(g);
+    g.connect(this.ctx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(
+      0.0001,
+      this.ctx.currentTime + duration
+    );
+    o.stop(this.ctx.currentTime + duration);
+  }
+};
+
+/* ==================================================
+   PARTICLE SYSTEM
+================================================== */
+function spawnParticles(x,y,count=8){
+  for(let i=0;i<count;i++){
+    const p = document.createElement("div");
+    p.className = "particle";
+    const angle = Math.random()*Math.PI*2;
+    const dist = 40+Math.random()*40;
+    p.style.left = x+"px";
+    p.style.top = y+"px";
+    p.style.setProperty("--x",Math.cos(angle)*dist+"px");
+    p.style.setProperty("--y",Math.sin(angle)*dist+"px");
+    document.body.appendChild(p);
+    setTimeout(()=>p.remove(),700);
+  }
+}
+
+/* ==================================================
+   CLICK EXTENSION (particles + sound)
+================================================== */
+const oldClick = clicker.onclick;
+clicker.onclick = (e)=>{
+  oldClick(e);
+  AudioEngine.beep(600,0.03);
+  spawnParticles(e.clientX,e.clientY,10);
+};
+
+/* ==================================================
+   SHOP SOUND
+================================================== */
+const oldBuy = buyPrestige;
+buyPrestige = function(id){
+  oldBuy(id);
+  AudioEngine.beep(300,0.08);
+};
+
+/* ==================================================
+   PRESTIGE EFFECT
+================================================== */
+const oldPrestige = doPrestige;
+doPrestige = function(){
+  if(game.score < 1000) return;
+  oldPrestige();
+  AudioEngine.beep(120,0.4);
+  const f = document.getElementById("prestigeFlash");
+  f.style.opacity = 1;
+  setTimeout(()=>f.style.opacity = 0,400);
+};
+
+/* ==================================================
+   SETTINGS + STATS UI
+================================================== */
+function renderSettings(){
+  let s = document.getElementById("settings");
+  if(!s){
+    s = document.createElement("div");
+    s.id = "settings";
+    s.className = "block";
+    document.getElementById("right").appendChild(s);
+  }
+
+  s.innerHTML = `
+    <b>⚙️ Настройки</b>
+    <div class="settings-item">
+      🔊 Звук: ${AudioEngine.enabled ? "ВКЛ" : "ВЫКЛ"}
+    </div>
+    <div class="settings-item">
+      ♻️ СБРОС ИГРЫ
+    </div>
+  `;
+
+  s.children[1].onclick = ()=>{
+    AudioEngine.enabled = !AudioEngine.enabled;
+    update();
+  };
+
+  s.children[2].onclick = ()=>{
+    if(confirm("Сбросить прогресс?")){
+      localStorage.clear();
+      location.reload();
+    }
+  };
+}
+
+/* ==================================================
+   STATS
+================================================== */
+function renderStats(){
+  let st = document.getElementById("stats");
+  if(!st){
+    st = document.createElement("div");
+    st.id = "stats";
+    st.className = "block";
+    document.getElementById("right").appendChild(st);
+  }
+
+  st.innerHTML = `
+    <b>📊 Статистика</b><br>
+    Всего кликов: ${game.totalClicks||0}<br>
+    Всего престижа: ${game.totalPrestige||0}
+  `;
+}
+
+/* ==================================================
+   EXTEND GAME STATE
+================================================== */
+game.totalClicks = game.totalClicks || 0;
+game.totalPrestige = game.totalPrestige || 0;
+
+/* ==================================================
+   EXTEND CLICK COUNT
+================================================== */
+const clickCountExt = clicker.onclick;
+clicker.onclick = (e)=>{
+  game.totalClicks++;
+  clickCountExt(e);
+};
+
+/* ==================================================
+   EXTEND PRESTIGE COUNT
+================================================== */
+const prestigeCountExt = doPrestige;
+doPrestige = function(){
+  if(game.score < 1000) return;
+  game.totalPrestige++;
+  prestigeCountExt();
+};
+
+/* ==================================================
+   EXTEND UPDATE FINAL
+================================================== */
+const finalUpdate = update;
+update = function(){
+  finalUpdate();
+  renderSettings();
+  renderStats();
+};
+
+update();
+</script>
+</body>
+</html>

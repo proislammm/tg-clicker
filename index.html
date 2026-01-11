@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+  <button onclick="claimDailyBonus()">🎁 Ежедневный бонус</button>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Telegram Clicker</title>
@@ -663,6 +664,23 @@ const AudioEngine = {
     o.stop(this.ctx.currentTime + duration);
   }
 };
+function claimDailyBonus() {
+  const now = Date.now();
+  const last = game.lastDaily || 0;
+  const day = 24 * 60 * 60 * 1000;
+
+  if (now - last < day) {
+    alert("⏳ Бонус уже получен");
+    return;
+  }
+
+  const reward = Math.max(100, game.perSec * 3600);
+  game.score += reward;
+  game.lastDaily = now;
+
+  alert("🎁 Ежедневный бонус: +" + reward);
+  update();
+}
 
 /* ==================================================
    PARTICLE SYSTEM
@@ -803,7 +821,4 @@ update = function(){
   renderStats();
 };
 
-update();
-</script>
-</body>
-</html>
+update

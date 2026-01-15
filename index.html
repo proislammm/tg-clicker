@@ -426,8 +426,7 @@
             <button style="margin-top: 10px; background: transparent; border: none; color: #aaa; cursor: pointer; text-decoration: underline;" onclick="closeRebirthModal()">Отмена</button>
         </div>
     </div>
-
-    <script>
+<script>
         /* --- КОНФИГУРАЦИЯ ИГРЫ --- */
         const GAME_VERSION = '1.0';
         const SAVE_KEY = 'cosmicClickerSave_v1';
@@ -583,4 +582,247 @@
             createFloatingText(e.clientX, e.clientY, `+${formatNumber(power)}`);
             createParticles(e.clientX, e.clientY);
             updateUI();
-              
+        });
+
+        // Визуальные эффекты
+        function createFloatingText(x, y, text) {
+            const el = document.createElement('div');
+            el.className = 'floating-text';
+            el.innerText = text;
+            el.style.left = (x - 20) + 'px';
+            el.style.top = (y - 40) + 'px';
+            el.style.color = state.darkMatter > 0 ? '#d896ff' : '#fff';
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 1000);
+        }
+
+        function createParticles(x, y) {
+            for(let i=0; i<5; i++) {
+                const p = document.createElement('div');
+                p.className = 'particle';
+                const color = Math.random() > 0.5 ? 'var(--primary)' : '#fff';
+                p.style.background = color;
+                p.style.left = x + 'px';
+                p.style.top = y + 'px';
+                
+                const angle = Math.random() * Math.PI * 2;
+                const velocity = 2 + Math.random() * 3;
+                
+                document.body.appendChild(p);
+
+                const anim = p.animate([
+                    { transform: 'translate(0,0) scale(1)', opacity: 1 },
+                    { transform: `translate(${Math.cos(angle)*50}px, ${Math.sin(angle)*50}px) scale(0)`, opacity: 0 }
+                ], {
+                    duration: 500 + Math.random() * 300,
+                    easing: 'cubic-bezier(0, .9, .57, 1)'
+                });
+
+                anim.onfinish = () => p.remove();
+            }
+        }
+
+        /* --- МАГАЗИН --- */
+
+        function renderShop() {
+            // Отрисовка зданий
+            const buildContainer = document.getElementById('shopBuildings');
+            buildContainer.innerHTML = '';
+            buildingsData.forEach(b => {
+                const cost = getBuildingCost(b.id);
+                const div = document.createElement('div');
+                div.className = 'upgrade-item';
+                div.id = `btn-build-${b.id}`;
+                div.onclick = () => buyBuilding(b.id);
+                div.innerHTML = `
+                    <div class="item-icon">${b.icon}</div>
+                    <div class="item-info">
+                        <div class="item-name">${b.name}<span class="item-count" id="count-${b.id}">${state.buildings[b.id]}</span></div>
+                        <div class="item-desc">${b.desc} (+${formatNumber(b.baseProd * (1 + state.darkMatter*0.1))}/сек)</div>
+                        <div class="item-cost">⚡ ${formatNumber(cost)}</div>
+                    </div>
+                `;
+                buildContainer.appendChild(div);
+            });
+
+            // Отрисовка улучшений
+            const upgContainer = document.getElementById('shopUpgrades');
+            upgContainer.innerHTML = '';
+            clickUpgradesData.forEach(u => {
+                if (state.clickUpgrades[u.id]) return; // Скрыть купленное
+
+                const div = document.createElement('div');
+                div.className = 'upgrade-item';
+                div.id = `btn-upg-${u.id}`;
+                div.onclick = () => buyClickUpgrade(u.id);
+                div.innerHTML = `
+                    <div class="item-icon">${u.icon}</div>
+                    <div class="item-info">
+                        <div class="item-name">${u.name}</div>
+                        <div class="item-desc">${u.desc}</div>
+                        <div class="item-cost">⚡ ${formatNumber(u.baseCost)}</div>
+                    </div>
+                `;
+                upgContainer.appendChild(div);
+            });
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            document.getElementById('shopBuildings').style.display = tab === 'buildings' ? 'block' : 'none';
+            document.getElementById('shopUpgrades').style.display = tab === 'upgrades' ? 'block' : 'none';
+        }
+
+        function buyBuilding(id) {
+            const cost = getBuildingCost(id);
+            if (state.energy >= cost) {
+                state.energy -= cost;
+                state.buildings[id]++;
+                playSound('buy');
+                renderShop(); // Обновляем цены
+                updateUI();
+            }
+        }
+
+        function buyClickUpgrade(id) {
+            const u = clickUpgradesData.find(x => x.id === id);
+            if (state.energy >= u.baseCost) {
+                state.energy -= u.baseCost;
+                state.clickUpgrades[id] = true;
+                playSound('buy');
+                renderShop();
+                updateUI();
+            }
+        }
+
+        function checkShopAvailability() {
+            // Buildings
+            buildingsData.forEach(b => {
+                const btn = document.getElementById(`btn-build-${b.id}`);
+                const cost = getBuildingCost(b.id);
+                if (btn) {
+                    if (state.energy >= cost) {
+                        btn.classList.add('affordable');
+                        btn.classList.remove('disabled');
+                    } else {
+                        btn.classList.remove('affordable');
+                        btn.classList.add('disabled');
+                    }
+                }
+            });
+            // Upgrades
+            clickUpgradesData.forEach(u => {
+                if (state.clickUpgrades[u.id]) return;
+                const btn = document.getElementById(`btn-upg-${u.id}`);
+                if (btn) {
+                    if (state.energy >= u.baseCost) {
+                        btn.classList.add('affordable');
+                        btn.classList.remove('disabled');
+                    } else {
+                        btn.classList.remove('affordable');
+                        btn.classList.add('disabled');
+                    }
+                }
+            });
+        }
+
+        /* --- СИСТЕМА ПРЕСТИЖА --- */
+
+        function calculatePotentialDM() {
+            // Формула: Квадратный корень из (Всего заработано / 1,000,000)
+            if (state.lifetimeEnergy < 1000000) return 0;
+            return Math.floor(Math.sqrt(state.lifetimeEnergy / 1000000)) - state.darkMatter;
+        }
+
+        function openRebirthModal() {
+            const potential = Math.max(0, Math.floor(Math.sqrt(state.lifetimeEnergy / 1000000)));
+            const gain = Math.max(0, potential - state.darkMatter);
+            
+            document.getElementById('potentialDM').innerText = gain;
+            
+            // Если игрок получит 0, предупредим или заблокируем (но оставим для примера)
+            document.getElementById('rebirthModal').classList.add('active');
+        }
+
+        function closeRebirthModal() {
+            document.getElementById('rebirthModal').classList.remove('active');
+        }
+
+        function doRebirth() {
+            const potential = Math.floor(Math.sqrt(state.lifetimeEnergy / 1000000));
+            if (potential > state.darkMatter) {
+                state.darkMatter = potential;
+                state.rebirthCount++;
+                
+                // Сброс
+                state.energy = 0;
+                state.lifetimeEnergy = 0; 
+                buildingsData.forEach(b => state.buildings[b.id] = 0);
+                clickUpgradesData.forEach(u => state.clickUpgrades[u.id] = false);
+
+                playSound('rebirth');
+                saveGame();
+                location.reload(); 
+            }
+            closeRebirthModal();
+        }
+
+        /* --- ИГРОВОЙ ЦИКЛ --- */
+
+        function updateUI() {
+            document.getElementById('energy').innerText = formatNumber(state.energy);
+            document.getElementById('mps').innerText = formatNumber(getProductionPerSecond());
+            
+            checkShopAvailability();
+
+            // Логика кнопки престижа
+            if (state.lifetimeEnergy > 1000000 || state.darkMatter > 0) {
+                document.getElementById('btnPrestigeOpen').style.display = 'block';
+            }
+            if (state.darkMatter > 0) {
+                document.getElementById('prestigeStats').style.display = 'block';
+                document.getElementById('darkMatter').innerText = formatNumber(state.darkMatter);
+                document.getElementById('dmBonus').innerText = formatNumber(state.darkMatter * 10);
+            }
+        }
+
+        function gameLoop() {
+            const mps = getProductionPerSecond();
+            if (mps > 0) {
+                // Добавляем доход за 100мс (тикрейт)
+                const perTick = mps / 10;
+                state.energy += perTick;
+                state.lifetimeEnergy += perTick;
+                updateUI();
+            }
+        }
+
+        /* --- СОХРАНЕНИЕ --- */
+
+        function saveGame() {
+            localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+        }
+
+        function loadGame() {
+            const saved = localStorage.getItem(SAVE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                state = { ...state, ...parsed };
+                if (!state.clickUpgrades) state.clickUpgrades = {};
+            }
+        }
+
+        /* --- ЗАПУСК --- */
+        
+        loadGame();
+        renderShop();
+        updateUI();
+
+        setInterval(gameLoop, 100);
+        setInterval(saveGame, 30000);
+
+    </script>
+</body>
+</html>
